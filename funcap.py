@@ -1,3 +1,5 @@
+# pylint: disable=C0103,C0116,C0301,W0401,W0612,W0613,W0614
+
 '''
 Created on Nov 21, 2012
 Python 3 and IDA 7 port on Sep 9, 2022
@@ -42,8 +44,9 @@ So we got one fat script file atm.
 
 from __future__ import absolute_import
 from __future__ import print_function
-#import sys
+
 import pickle
+
 from idaapi import *
 from idautils import *
 from ida_kernwin import *
@@ -53,20 +56,19 @@ from ida_bytes import *
 from ida_funcs import *
 from ida_dbg import *
 import ida_idd
-from six.moves import range
 
 # utility functions
 
 def format_name(ea):
     name = get_func_name(ea)
-    if name == "" or name == None:
-        name = "0x%x" % ea
+    if name is None or name == "":
+        name = f"0x{ea:X}"
     return name
 
 def format_offset(ea):
     offset = get_func_off_str(ea)
-    if offset == "" or offset == None:
-        offset = "0x%x" % ea
+    if offset is None or offset == "":
+        offset = f"0x{ea:X}"
     return offset
 
 def get_arch():
@@ -74,23 +76,23 @@ def get_arch():
     Get the target architecture.
     Supported archs: x86 32-bit, x86 64-bit, ARM 32-bit
     '''
-    (arch, bits) = (None, None)
+    (_arch, _bits) = (None, None)
     for x in dbg_get_registers():
         name = x[0]
         if name == 'RAX':
-            arch = 'amd64'
-            bits = 64
+            _arch = 'amd64'
+            _bits = 64
             break
         elif name == 'EAX':
-            arch = 'x86'
-            bits = 32
+            _arch = 'x86'
+            _bits = 32
             break
         elif name == 'R0':
-            arch = 'arm'
-            bits = 32
+            _arch = 'arm'
+            _bits = 32
             break
 
-    return (arch, bits)
+    return (_arch, _bits)
 
 class FunCapHook(DBG_Hooks):
     '''
@@ -171,6 +173,7 @@ class FunCapHook(DBG_Hooks):
 
         self.out = None
         self.strings_out = None
+        self.isCode = False
 
     ###
     # This a is public interface
@@ -183,9 +186,9 @@ class FunCapHook(DBG_Hooks):
         Turn the script on
         '''
         if self.outfile:
-            self.out = open(self.outfile, 'w')
+            self.out = open(self.outfile, 'w', encoding="utf-8")
         if self.strings_file:
-            self.strings_out = open(self.strings_file, 'w')
+            self.strings_out = open(self.strings_file, 'w', encoding="utf-8")
         self.hook()
         print("FunCap is ON")
 
@@ -193,10 +196,12 @@ class FunCapHook(DBG_Hooks):
         '''
         Turn the script off
         '''
-        if self.out != None:
+        if self.out:
             self.out.close()
-        if self.strings_out != None:
+            self.out = None
+        if self.strings_out:
             self.strings_out.close()
+            self.strings_out = None
         self.unhook()
 
         print("FunCap is OFF")
@@ -218,7 +223,6 @@ class FunCapHook(DBG_Hooks):
 
                 # If it's an instruction
                 if is_code(get_full_flags(head)):
-
                     if self.is_ret(head):
                         add_bpt(head)
 
@@ -244,7 +248,7 @@ class FunCapHook(DBG_Hooks):
             ea = get_screen_ea()
             func = get_func_name(ea)
 
-        self.output("hooking function: %s()" % func)
+        self.output(f"hooking function: {func}")
 
         chunks = Chunks(ea)
         for (start_ea, end_ea) in chunks:
@@ -269,13 +273,13 @@ class FunCapHook(DBG_Hooks):
                     ea = s
                     break
 
-            if ea == None:
-                self.output("WARNING: cannot hook segment %s" % seg)
+            if ea is None:
+                self.output(f"WARNING: cannot hook segment {seg}")
                 return
         else:
             ea = get_screen_ea()
             seg = get_segm_name(ea)
-        self.output("hooking segment: %s" % seg)
+        self.output(f"Hooking segment: {seg}")
         start_ea = get_segm_start(ea)
         end_ea = get_segm_end(ea)
         if jump:
@@ -310,11 +314,13 @@ class FunCapHook(DBG_Hooks):
 
         CallGraph("FunCap: function calls", self.calls_graph, exact_offsets).Show()
 
-    def saveGraph(self, path = os.path.expanduser('~') + "/funcap.graph"):
-        pickle.dump(d.calls_graph, open(path, "w"))
+    def saveGraph(self, path=os.path.expanduser('~') + "/funcap.graph"):
+        with open(path, "wb") as f:
+            pickle.dump(d.calls_graph, f)
 
-    def loadGraph(self, path = os.path.expanduser('~') + "/funcap.graph"):
-        d.calls_graph = pickle.load(open(path, "r"))
+    def loadGraph(self, path=os.path.expanduser('~') + "/funcap.graph"):
+        with open(path, "rb") as f:
+            d.calls_graph = pickle.load(f)
 
     def addStop(self, ea):
         '''
@@ -339,10 +345,8 @@ class FunCapHook(DBG_Hooks):
         '''
 
         for head in Heads(start_ea, end_ea):
-
             # If it's an instruction
             if is_code(get_full_flags(head)):
-
                 if self.is_call(head):
                     add_bpt(head)
 
@@ -356,10 +360,8 @@ class FunCapHook(DBG_Hooks):
         '''
 
         for head in Heads(start_ea, end_ea):
-
             # If it's an instruction
             if is_code(get_full_flags(head)):
-
                 if (self.is_call(head) or self.is_jump(head)):
                     add_bpt(head)
 
@@ -373,15 +375,13 @@ class FunCapHook(DBG_Hooks):
         '''
 
         argFrameSize = get_struc_size(get_func_attr(addr, FUNCATTR_FRAME)) - get_frame_size(addr) + get_func_attr(addr, FUNCATTR_ARGSIZE)
-        return argFrameSize / (self.bits/8)
+        return argFrameSize / (self.bits / 8)
 
     def get_caller(self):
-
         return self.prev_ins(self.return_address())
 
     def format_caller(self, ret):
-
-        return format_offset(ret) + " (0x%x)" % ret
+        return format_offset(ret) + f" (0x{ret:X})"
 
     def getRegValueFromCtx(self, name, context):
         '''
@@ -394,6 +394,7 @@ class FunCapHook(DBG_Hooks):
         for reg in context:
             if reg['name'] == name:
                 return reg['value']
+        return None
 
     def add_comments(self, ea, lines, every = False):
         '''
@@ -409,11 +410,12 @@ class FunCapHook(DBG_Hooks):
         for line in lines:
             # workaround with Eval() - ExtLinA() doesn't work well in idapython
             line_sanitized = line.replace('"', '\\"')
-            ret = eval_idc('ExtLinA(%d, %d, "%s");' % (ea, idx, line_sanitized))
+            ret = eval_idc(f'ExtLinA({ea:d}, {idx:d}, "{line_sanitized}");')
             if ret:
-                self.output("idc.eval_idc() returned an error: %s" % ret)
+                self.output(f"idc.eval_idc() returned an error: {ret}")
             idx += 1
-            if every == False and idx > self.CMT_MAX: break
+            if not every and idx > self.CMT_MAX:
+                break
 
     def format_normal(self, regs):
         '''
@@ -445,9 +447,9 @@ class FunCapHook(DBG_Hooks):
             valchain_full = format_string % (reg['name'], reg['value'])
             valchain_cmt = format_string % (reg['name'], reg['value'])
             prev_memval = reg['value']
-            if prev_memval != None:
+            if prev_memval:
                 memval=getword(reg['value'])
-                if memval != None:
+                if memval:
                     next_memval = getword(memval)
                 else:
                     next_memval = None
@@ -455,13 +457,13 @@ class FunCapHook(DBG_Hooks):
                 memval = None
                 next_memval = None
 
-            if (self.multiple_dereferences):
+            if self.multiple_dereferences:
                 maxdepth = self.multiple_dereferences
-                while (next_memval): #memval is a proper pointer
-                    if (maxdepth == 0):
+                while next_memval:  # memval is a proper pointer
+                    if maxdepth == 0:
                         break
                     maxdepth-=1
-                    if (prev_memval == memval):#points at itself
+                    if prev_memval == memval:   # points at itself
                         break
                     valchain_full += format_string_append % memval
                     valchain_cmt += format_string_append % memval
@@ -470,12 +472,12 @@ class FunCapHook(DBG_Hooks):
                     memval = next_memval
                     next_memval = getword(memval)
 
-            function_name=get_func_off_str(prev_memval)#no more dereferencing. is this a function ?
-            if (function_name):
-                valchain_full += " (%s)" % function_name
-                valchain_cmt += " (%s)" % function_name
+            function_name = get_func_off_str(prev_memval)   # no more dereferencing. is this a function ?
+            if function_name:
+                valchain_full += f" ({function_name})"
+                valchain_cmt += f" ({function_name})"
             else: #no, dump data
-                if (self.hexdump):
+                if self.hexdump:
                     valchain_full_left = (self.HEXMODE_LENGTH - len(valchain_full) - 1) / 4
                     valchain_cmt_left = (self.HEXMODE_LENGTH_IN_COMMENTS - len(valchain_cmt) - 1) / 4
                     format_string_dump = " (%s)"
@@ -484,8 +486,8 @@ class FunCapHook(DBG_Hooks):
                     valchain_cmt_left = self.STRING_LENGTH_IN_COMMENTS - len(valchain_cmt)
                     format_string_dump = " (\"%s\")"
 
-                if (valchain_full_left <4): valchain_full_left = 4 #allways dump at least 4 bytes
-                if (valchain_cmt_left <4): valchain_cmt_left = 4 #allways dump at least 4 bytes
+                valchain_full_left = max(valchain_full_left, 4) # allways dump at least 4 bytes
+                valchain_cmt_left = max(valchain_cmt_left, 4)   # allways dump at least 4 bytes
 
                 valchain_full += format_string_dump % self.smart_format(self.dereference(prev_memval,2 * valchain_full_left), valchain_full_left)
                 valchain_cmt += format_string_dump % self.smart_format_cmt(self.dereference(prev_memval,2 * valchain_cmt_left),valchain_cmt_left)
@@ -527,9 +529,9 @@ class FunCapHook(DBG_Hooks):
             valchain_full = format_string_full % (reg['name'], reg['value'])
             valchain_cmt = format_string_cmt % (reg['name'], reg['value'])
             prev_memval = reg['value']
-            if prev_memval != None:
+            if prev_memval:
                 memval = getword(reg['value'])
-                if memval != None:
+                if memval:
                     next_memval = getword(memval)
                 else:
                     next_memval = None
@@ -537,13 +539,13 @@ class FunCapHook(DBG_Hooks):
                 memval = None
                 next_memval = None
 
-            if (self.multiple_dereferences):
+            if self.multiple_dereferences:
                 maxdepth = self.multiple_dereferences
-                while (next_memval): #memval is a proper pointer
-                    if (maxdepth == 0):
+                while next_memval:  # memval is a proper pointer
+                    if maxdepth == 0:
                         break
                     maxdepth-=1
-                    if (prev_memval == memval):#points at itself
+                    if prev_memval == memval:   # points at itself
                         break
                     valchain_full += format_string_append % memval
                     valchain_cmt += format_string_append % memval
@@ -552,12 +554,12 @@ class FunCapHook(DBG_Hooks):
                     memval = next_memval
                     next_memval = getword(memval)
 
-            function_name=get_func_off_str(prev_memval)#no more dereferencing. is this a function ?
-            if (function_name):
-                valchain_full += " (%s)" % function_name
-                valchain_cmt += " (%s)" %  function_name
-            else: #no, dump data
-                if (self.hexdump):
+            function_name = get_func_off_str(prev_memval)   # no more dereferencing. is this a function ?
+            if function_name:
+                valchain_full += f" ({function_name})"
+                valchain_cmt += f" ({function_name})"
+            else:   # no, dump data
+                if self.hexdump:
                     valchain_full_left = (self.HEXMODE_LENGTH - len(valchain_full) - 1) / 4
                     valchain_cmt_left = (self.HEXMODE_LENGTH_IN_COMMENTS - len(valchain_cmt) - 1) / 4
                     format_string_dump = " (%s)"
@@ -566,8 +568,8 @@ class FunCapHook(DBG_Hooks):
                     valchain_cmt_left = self.STRING_LENGTH_IN_COMMENTS - len(valchain_cmt)
                     format_string_dump = " (\"%s\")"
 
-                if (valchain_full_left <4): valchain_full_left = 4 #allways dump at least 4 bytes
-                if (valchain_cmt_left <4): valchain_cmt_left = 4 #allways dump at least 4 bytes
+                valchain_full_left = max(valchain_full_left, 4) # allways dump at least 4 bytes
+                valchain_cmt_left = max(valchain_cmt_left, 4)   # allways dump at least 4 bytes
 
                 valchain_full += format_string_dump % self.smart_format(self.dereference(prev_memval,2 * valchain_full_left), valchain_full_left)
                 valchain_cmt += format_string_dump % self.smart_format_cmt(self.dereference(prev_memval,2 * valchain_cmt_left),valchain_cmt_left)
@@ -615,9 +617,9 @@ class FunCapHook(DBG_Hooks):
             valchain_full = format_string_full % (reg['name'], reg['value'])
             valchain_cmt = format_string_cmt % (reg['name'], reg['value'])
             prev_memval = reg['value']
-            if prev_memval != None:
+            if prev_memval:
                 memval = getword(reg['value'])
-                if memval != None:
+                if memval:
                     next_memval = getword(memval)
                 else:
                     next_memval = None
@@ -625,13 +627,13 @@ class FunCapHook(DBG_Hooks):
                 memval = None
                 next_memval = None
 
-            if (self.multiple_dereferences):
+            if self.multiple_dereferences:
                 maxdepth = self.multiple_dereferences
-                while (next_memval): #memval is a proper pointer
-                    if (maxdepth == 0):
+                while next_memval:  # memval is a proper pointer
+                    if maxdepth == 0:
                         break
                     maxdepth-=1
-                    if (prev_memval == memval):#points at itself
+                    if prev_memval == memval:   # points at itself
                         break
                     valchain_full += format_string_append % memval
                     valchain_cmt += format_string_append % memval
@@ -640,12 +642,12 @@ class FunCapHook(DBG_Hooks):
                     memval = next_memval
                     next_memval = getword(memval)
 
-            function_name=get_func_off_str(prev_memval)#no more dereferencing. is this a function ?
-            if (function_name):
-                valchain_full += " (%s)" % function_name
-                valchain_cmt += " (%s)" %  function_name
+            function_name = get_func_off_str(prev_memval)   # no more dereferencing. is this a function ?
+            if function_name:
+                valchain_full += f" ({function_name})"
+                valchain_cmt += f" ({function_name})"
             else: #no, dump data
-                if (self.hexdump):
+                if self.hexdump:
                     valchain_full_left = (self.HEXMODE_LENGTH - len(valchain_full) - 1) / 4
                     valchain_cmt_left = (self.HEXMODE_LENGTH_IN_COMMENTS - len(valchain_cmt) - 1) / 4
                     format_string_dump = " (%s)"
@@ -654,8 +656,9 @@ class FunCapHook(DBG_Hooks):
                     valchain_cmt_left = self.STRING_LENGTH_IN_COMMENTS - len(valchain_cmt)
                     format_string_dump = " (\"%s\")"
 
-                if (valchain_full_left <4): valchain_full_left = 4 #allways dump at least 4 bytes
-                if (valchain_cmt_left <4): valchain_cmt_left = 4 #allways dump at least 4 bytes
+
+                valchain_full_left = max(valchain_full_left, 4) # allways dump at least 4 bytes
+                valchain_cmt_left = max(valchain_cmt_left, 4)   # allways dump at least 4 bytes
 
                 valchain_full += format_string_dump % self.smart_format(self.dereference(prev_memval,2 * valchain_full_left), valchain_full_left)
                 valchain_cmt += format_string_dump % self.smart_format_cmt(self.dereference(prev_memval,2 * valchain_cmt_left),valchain_cmt_left)
@@ -670,9 +673,9 @@ class FunCapHook(DBG_Hooks):
                     valchain_full =  format_string_full_s % (reg['name'], reg['value'])
                     valchain_cmt = format_string_cmt_s % (reg['name'], reg['value'])
                     prev_memval = reg['value']
-                    if prev_memval != None:
+                    if prev_memval:
                         memval = getword(reg['value'])
-                        if memval != None:
+                        if memval:
                             next_memval = getword(memval)
                         else:
                             next_memval = None
@@ -680,14 +683,14 @@ class FunCapHook(DBG_Hooks):
                         memval = None
                         next_memval = None
 
-                    if (self.multiple_dereferences):
+                    if self.multiple_dereferences:
                         maxdepth = self.multiple_dereferences
-                        while (next_memval): #memval is a proper pointer
-                            if (maxdepth == 0):
+                        while next_memval:  # memval is a proper pointer
+                            if maxdepth == 0:
                                 break
-                            if (prev_memval == memval):#points at itself
+                            if prev_memval == memval:   #points at itself
                                 break
-                            maxdepth-=1
+                            maxdepth -= 1
                             valchain_full += format_string_append % memval
                             valchain_cmt += format_string_append % memval
 
@@ -696,11 +699,11 @@ class FunCapHook(DBG_Hooks):
                             next_memval = getword(memval)
 
                     function_name=get_func_off_str(prev_memval)#no more dereferencing. is this a function ?
-                    if (function_name):
-                        valchain_full += " (%s)" % function_name
-                        valchain_cmt += " (%s)" %  function_name
+                    if function_name:
+                        valchain_full += f" ({function_name})"
+                        valchain_cmt += f" ({function_name})"
                     else: #no, dump data
-                        if (self.hexdump):
+                        if self.hexdump:
                             valchain_full_left = (self.HEXMODE_LENGTH - len(valchain_full) - 1) / 4
                             valchain_cmt_left = (self.HEXMODE_LENGTH_IN_COMMENTS - len(valchain_cmt) - 1) / 4
                             format_string_dump = " (%s)"
@@ -709,8 +712,8 @@ class FunCapHook(DBG_Hooks):
                             valchain_cmt_left = self.STRING_LENGTH_IN_COMMENTS - len(valchain_cmt)
                             format_string_dump = " (\"%s\")"
 
-                        if (valchain_full_left <4): valchain_full_left = 4 #allways dump at least 4 bytes
-                        if (valchain_cmt_left <4): valchain_cmt_left = 4 #allways dump at least 4 bytes
+                        valchain_full_left = max(valchain_full_left, 4) # allways dump at least 4 bytes
+                        valchain_cmt_left = max(valchain_cmt_left, 4)   # allways dump at least 4 bytes
 
                         valchain_full += format_string_dump % self.smart_format(self.dereference(prev_memval,2 * valchain_full_left), valchain_full_left)
                         valchain_cmt += format_string_dump % self.smart_format_cmt(self.dereference(prev_memval,2 * valchain_cmt_left),valchain_cmt_left)
@@ -794,7 +797,7 @@ class FunCapHook(DBG_Hooks):
         discovered = ""
 
         for char in data:
-            if char >= 32 and char <= 126:
+            if 32 <= char <= 126:
                 discovered += chr(char)
             elif print_dots:
                 discovered += "."
@@ -846,10 +849,10 @@ class FunCapHook(DBG_Hooks):
         dump = ""
 
         for byte in data:
-            dump  += "%02x " % ord(byte)
+            dump  += f"{ord(byte):02X} "
 
         for byte in data:
-            if byte >= 32 and byte <= 126:
+            if 32 <= byte <= 126:
                 dump += chr(byte)
             else:
                 dump += "."
@@ -897,7 +900,6 @@ class FunCapHook(DBG_Hooks):
         if not data_string:
             data_string = self.get_printable_string(data, print_dots)
 
-
         # shouldn't have been here but the idea of string dumping came out to me later on
         # TODO: re-implement. We could also take much longer strings
         if self.strings_file:
@@ -940,14 +942,14 @@ class FunCapHook(DBG_Hooks):
         '''
         Return next instruction to ea
         '''
-        end = get_inf_structure().get_maxEA()
+        end = get_inf_structure().max_ea
         return next_head(ea, end)
 
     def prev_ins(self, ea):
         '''
         Return previous instruction to ea
         '''
-        start = get_inf_structure().get_minEA()
+        start = get_inf_structure().min_ea
         return idc.prev_head(ea, start)
 
     # handlers called from within debug hooks
@@ -960,10 +962,10 @@ class FunCapHook(DBG_Hooks):
         function_name = get_func_name(ea)
         caller = self.format_caller(self.get_caller())
         if function_name:
-            header = "At function end: %s (0x%x) " % (function_name,ea) + "to " + caller
+            header = f"At function end: {function_name} (0x{ea:X}) to {caller}"
             raw_context = self.get_context(ea=ea)
         else:
-            header = "At function end - unknown function (0x%x) " % ea + "to " + caller
+            header = f"At function end - unknown function (0x{ea:X}) to {caller}"
             raw_context = self.get_context(ea=ea, depth=0)
         if self.colors:
             set_color(ea, CIC_ITEM, self.ITEM_COLOR)
@@ -996,10 +998,10 @@ class FunCapHook(DBG_Hooks):
             del self.saved_contexts[sp]
         else:
             func_name = function_call['func_name']
-            self.output("WARNING: saved context not found for stack pointer 0x%x, assuming function %s" % (sp, function_call['func_name']))
+            self.output(f"WARNING: saved context not found for stack pointer 0x{sp:X}, assuming function {function_call['func_name']}")
             saved_context = None
 
-        header = "Returning from call to %s(), execution resumed at %s (0x%x)" % (func_name, format_offset(ea), ea)
+        header = f"Returning from call to {func_name}(), execution resumed at {format_offset(ea)} (0x{ea:X)}"
         (context_full, context_comments) = self.format_return(raw_context, saved_context)
 
         if self.comments and (self.overwrite_existing or ea not in self.visited):
@@ -1018,7 +1020,7 @@ class FunCapHook(DBG_Hooks):
         caller_offset = self.format_caller(caller_ea)
         caller_name = format_name(caller_ea)
 
-        header = "At function start: %s (0x%x) " % (name,ea) + "called by %s" % caller_offset
+        header = f"At function start: {name} (0x{ea:X)} called by {caller_offset}"
 
         raw_context= self.get_context(ea=ea)
         if self.colors:
@@ -1047,7 +1049,7 @@ class FunCapHook(DBG_Hooks):
         Called when breakpoint hit on anything else besides the above and below
         '''
 
-        header = "Address: 0x%x" % ea
+        header = f"Address: 0x{ea:X}"
         # no argument dumping if not function
         raw_context = self.get_context(ea=ea, depth=self.depth)
         (context_full, context_comments) = self.format_normal(raw_context)
@@ -1092,19 +1094,19 @@ class FunCapHook(DBG_Hooks):
         '''
 
         if self.comments:
-            set_cmt(self.current_caller['addr'], "0x%x" % ea, False)
+            set_cmt(self.current_caller['addr'], f"0x{ea:X}", False)
         seg_name = get_segm_name(ea)
         if self.code_discovery and (not is_code(get_full_flags(ea)) or not self.isCode) and not self.is_system_lib(seg_name):
-            self.output("New code segment discovered: %s (0x%x => 0x%x)" % (seg_name, self.current_caller['addr'], ea))
+            self.output(f"New code segment discovered: {seg_name} (0x{self.current_caller['addr']:X} => 0x{ea:X})")
             start_ea = get_segm_start(ea)
             end_ea = get_segm_end(ea)
             refresh_debugger_memory()
             if not create_insn(ea):
                 ins = decode_insn(ea)
                 if ins.size:
-                    del_items(ea, ins.size, DOUNK_EXPAND)
+                    del_items(ea, ins.size, DELIT_EXPAND)
                     if not create_insn(ea):
-                        self.output("handle_after_jump(): unable to make code at 0x%x" % ea)
+                        self.output(f"handle_after_jump(): unable to make code at 0x{ea:X}")
 
             plan_and_wait(start_ea, end_ea)
             self.add_call_and_jump_bp(start_ea, end_ea)
@@ -1121,12 +1123,13 @@ class FunCapHook(DBG_Hooks):
         symbol_name = get_name(ea, ida_name.GN_VISIBLE)
 
         if symbol_name and name and symbol_name != name and not re.match("loc_", symbol_name):
-            self.output("WARNING: IDA has probably wrongly analyzed the following function: %s and " \
-                        "it is overlapping with another symbol: %s. Funcap will undefine it. " % (name, symbol_name))
+            self.output(f"WARNING: IDA has probably wrongly analyzed the following function: {name} and " \
+                        "it is overlapping with another symbol: {symbol_name}. Funcap will undefine it. ")
             del_func(get_name_ea_simple(name))
             name = None
 
-        if name: return name
+        if name:
+            return name
 
         need_hooking = False
         #refresh_debugger_memory() # get_segm_name didn't seem to work sometimes
@@ -1145,12 +1148,12 @@ class FunCapHook(DBG_Hooks):
                 # fine, we try again
                 r = add_func(ea)
                 if not r:
-                    self.output("WARNING: unable to create function at 0x%x" % ea)
+                    self.output(f"WARNING: unable to create function at 0x{ea:X}")
             else:
                 # undefining also helps. Last try (thx IgorS)
                 ins = decode_insn(ea)
                 if ins.size:
-                    del_items(ea, ins.size, DOUNK_EXPAND)
+                    del_items(ea, ins.size, DELIT_EXPAND)
                     if create_insn(ea):
                         # weird but worked on my example ... calling the same twice
                         refresh_debugger_memory()
@@ -1158,13 +1161,13 @@ class FunCapHook(DBG_Hooks):
                         refresh_debugger_memory()
                         r = add_func(ea)
                         if not r:
-                            self.output("WARNING: unable to create function at 0x%x" % ea)
+                            self.output(f"WARNING: unable to create function at 0x{ea:X}")
 
         if need_hooking:
             start_ea = get_segm_start(ea)
             end_ea = get_segm_end(ea)
             refresh_debugger_memory()
-            self.output("0x%x: new code section detected: [0x%x, 0x%x]" % (ea, start_ea, end_ea))
+            self.output(f"0x{ea:X}: new code section detected: [0x{start_ea:X}, 0x{end_ea:X}]")
             plan_and_wait(start_ea, end_ea)
             if self.code_discovery_stop:
                 self.resume = False
@@ -1178,8 +1181,8 @@ class FunCapHook(DBG_Hooks):
             func_end = get_func_attr(ea, FUNCATTR_END)
             plan_and_wait(ea, func_end)
             return name
-        else:
-            return None
+
+        return None
 
     def handle_after_call(self, ret_addr, stub_name):
         '''
@@ -1189,8 +1192,8 @@ class FunCapHook(DBG_Hooks):
         ea = self.get_ip()
 
         if self.is_fake_call(ea):
-            set_cmt(self.current_caller['addr'], "fake function call to 0x%x" % ea, False)
-            self.output("0x%X: fake function call to 0x%x" % (self.current_caller['addr'],ea))
+            set_cmt(self.current_caller['addr'], "fake function call to 0x{ea:X}", False)
+            self.output(f"0x{self.current_caller['addr']:X}: fake function call to 0x{ea:X}")
             self.current_caller = self.delayed_caller
             self.delayed_caller = None
             return 0
@@ -1224,9 +1227,10 @@ class FunCapHook(DBG_Hooks):
                 self.hookFunc(func = name)
         else:
             name = get_name(ea, ida_name.GN_VISIBLE) # maybe there is a symbol (happens sometimes when the IDA analysis goes wrong)
-            if not name: name = "0x%x" % ea
+            if not name:
+                name = f"0x{ea:X}"
             # this probably is not a real function then - handle it in a generic way
-            self.output("Call to unknown function: 0x%x to %s" % (caller_ea,name))
+            self.output(f"Call to unknown function: 0x{caller_ea:X} to {name}")
             self.handle_generic(ea)
             self.current_caller = self.delayed_caller
             self.delayed_caller = None
@@ -1234,10 +1238,9 @@ class FunCapHook(DBG_Hooks):
 
         # if we were going through a stub, display the name that was called directly (e.g. not kernelbase but kernel32)
         if self.stub_name:
-            header = "Function call: %s to %s (0x%x)" % (caller, stub_name, ea) +\
-                    "\nReal function called: %s" % name
+            header = f"Function call: {caller} to {stub_name} (0x{ea:X})\nReal function called: {name}"
         else:
-            header = "Function call: %s to %s (0x%x)" % (caller, name, ea)
+            header = f"Function call: {caller} to {name} (0x{ea:X})"
 
         # link previously captured register context with stack-based arguments
 
@@ -1283,13 +1286,15 @@ class FunCapHook(DBG_Hooks):
         # insert IDA's comments
         if self.comments and (self.overwrite_existing or caller_ea not in self.visited):
             self.add_comments(caller_ea, context_comments)
-            set_cmt(caller_ea, "%s()" % name, False)
+            set_cmt(caller_ea, f"{name}()", False)
 
         # next time we don't need to insert comments (unless overwrite_existing is set)
         self.visited.append(caller_ea)
 
         if self.colors:
             set_color(ea, CIC_FUNC, self.FUNC_COLOR)
+
+        return 1
 
     def is_system_lib(self, name):
         '''
@@ -1309,10 +1314,7 @@ class FunCapHook(DBG_Hooks):
         while m:
             path = get_module_name(m)
             if re.search(name, path):
-                if any(regex.search(path) for regex in sysfolders):
-                    return True
-                else:
-                    return False
+                return any(regex.search(path) for regex in sysfolders)
             m = idc.get_next_module(m)
         return False
 
@@ -1334,9 +1336,9 @@ class FunCapHook(DBG_Hooks):
             print("FunCap: reached a stop point")
             return 0
 
-        if ea in list(self.function_calls.keys()): # coming back from a call we previously stopped on
+        if ea in self.function_calls: # coming back from a call we previously stopped on
             self.handle_return(ea)
-            if self.function_calls[ea]['user_bp'] == False:
+            if not self.function_calls[ea]['user_bp']:
                 del_bpt(ea)
                 if self.resume:
                     request_continue_process()
@@ -1422,7 +1424,8 @@ class FunCapHook(DBG_Hooks):
                 # that's not us - return to IDA
                 self.current_caller = None
                 self.delayed_caller = None
-                if self.resume: "FunCap: unexpected single step" # happens sometimes - due to a BUG in IDA. Hope one day it will be corrected
+                if self.resume:
+                    print("FunCap: unexpected single step") # happens sometimes - due to a BUG in IDA. Hope one day it will be corrected
         if self.resume:
             request_continue_process()
             run_requests()
@@ -1455,7 +1458,8 @@ class X86CapHook(FunCapHook):
         Check if we are at jump to subrouting instruction
         '''
         mnem = generate_disasm_line(ea,0)
-        if re.match('call\s+far ptr', mnem): return None # when IDA badly identifies data as code it throws false positives - zbot example
+        if re.match('call\s+far ptr', mnem):
+            return None     # when IDA badly identifies data as code it throws false positives - zbot example
         return re.match('call', mnem)
 
     def is_jump(self, ea):
@@ -1480,7 +1484,7 @@ class X86CapHook(FunCapHook):
             if not general_only or (re.match("E", name) and name != 'ES'):
                 value = idc.get_reg_value(name)
                 regs.append({'name': name, 'value': value, 'deref': self.dereference(value, 2 * self.STRING_LENGTH)})
-        if ea != None or depth != None:
+        if ea is not None or depth is not None:
             regs = regs + self.get_stack_args(ea, depth=depth, stack_offset=stack_offset)
         return regs
 
@@ -1490,12 +1494,13 @@ class X86CapHook(FunCapHook):
         '''
         l = []
         stack = idc.get_reg_value('ESP')
-        if depth == None: depth = self.get_num_args_stack(ea)+1
+        if depth is  None:
+            depth = self.get_num_args_stack(ea) + 1
         depth = int(depth)
         argno = 0
         for arg in range(stack_offset, depth):
             value = read_dbg_dword(stack+arg*4)
-            l.append({'name': "arg_%02x" % argno, 'value': value, 'deref': self.dereference(value, 2 * self.STRING_LENGTH)})
+            l.append({'name': f"arg_{argno:02X}", 'value': value, 'deref': self.dereference(value, 2 * self.STRING_LENGTH)})
             argno = argno + 4
         return l
 
@@ -1555,7 +1560,7 @@ class X86CapHook(FunCapHook):
 
         # a bit of a workaround - we need to know if it is code or not before making it code. Needed for code_discovery
 
-        if(is_code(get_full_flags(ea))):
+        if is_code(get_full_flags(ea)):
             self.isCode = True
         else:
             self.isCode = False
@@ -1572,7 +1577,7 @@ class X86CapHook(FunCapHook):
         # kernel32.dll:76401489 5D                            pop     ebp
         # kernel32.dll:7640148A E9 2D FF FF FF                jmp     sub_764013BC
         dbytes = ida_idd.dbg_read_memory(ea, 7)
-        if dbytes == "\x8b\xff\x55\x8b\xec\x5d\xe9" or dbytes == "\x8b\xff\x55\x8b\xec\x5d\xeb":
+        if dbytes in (b"\x8b\xff\x55\x8b\xec\x5d\xe9", b"\x8b\xff\x55\x8b\xec\x5d\xeb"):
             return 5
         # no stubs. You can define your custom stubs here
         return 0
@@ -1635,9 +1640,8 @@ class AMD64CapHook(FunCapHook):
             if not general_only or (re.match("R", name) and name != 'RS'):
                 value = idc.get_reg_value(name)
                 regs.append({'name': name, 'value': value, 'deref': self.dereference(value, 2 * self.STRING_LENGTH)})
-        if ea != None or depth != None:
-            if ea != None or depth != None:
-                regs = regs + self.get_stack_args(ea, depth=depth, stack_offset=stack_offset)
+        if ea is not None or depth is not None:
+            regs = regs + self.get_stack_args(ea, depth=depth, stack_offset=stack_offset)
         return regs
 
     def get_stack_args(self, ea, depth = None, stack_offset = 1):
@@ -1646,12 +1650,13 @@ class AMD64CapHook(FunCapHook):
         '''
         l = []
         stack = idc.get_reg_value('RSP')
-        if depth == None: depth = self.get_num_args_stack(ea)+1
+        if depth is None:
+            depth = self.get_num_args_stack(ea) + 1
         depth = int(depth) #why the fuck we get float here ?
         argno = 0
         for arg in range(stack_offset, depth):
             value = read_dbg_qword(stack+arg*8)
-            l.append({'name': "arg_%02x" % argno, 'value': value, 'deref': self.dereference(value, 2 * self.STRING_LENGTH)})
+            l.append({'name': f"arg_{argno:02X}", 'value': value, 'deref': self.dereference(value, 2 * self.STRING_LENGTH)})
             argno = argno + 8
         return l
 
@@ -1704,7 +1709,7 @@ class AMD64CapHook(FunCapHook):
 
         # a bit of a workaround - we need to know if it is code or not before making it code. Needed for code_discovery
 
-        if (is_code(get_full_flags(ea))):
+        if is_code(get_full_flags(ea)):
             self.isCode = True
         else:
             self.isCode = False
@@ -1844,7 +1849,7 @@ class CallGraph(GraphViewer):
                 node_callers[hit] = []
                 self.nodes[hit] = self.AddNode((hit, name))
             for caller in self.calls[hit]['callers']:
-                if self.exact_offsets == True:
+                if self.exact_offsets:
                     caller_name = caller['offset']
                     graph_caller = caller['ea']
                 else:
@@ -1876,7 +1881,7 @@ class CallGraph(GraphViewer):
     def OnHint(self, node_id):
         ea, label = self[node_id]
         disasm = generate_disasm_line(ea-1,0)
-        return "0x%x %s" % (ea, disasm)
+        return f"0x{ea:X} {disasm}"
 
 ###
 # automation scripts examples - works for win32 and win64-bit
@@ -1896,7 +1901,7 @@ class Auto:
         add_bpt(start)
         segname = get_segm_name(start)
         start_process('', '', '')
-        wait_for_next_event(WFNE_SUSP, -1);
+        wait_for_next_event(WFNE_SUSP, -1)
         print("Auto: program entry point reached")
         del_bpt(start)
         d.addStop(get_name_ea_simple("ntdll_RtlExitUserProcess"))
@@ -1914,7 +1919,7 @@ class Auto:
         start = get_entry_ordinal(0)
         add_bpt(start)
         start_process('', '', '')
-        wait_for_next_event(WFNE_SUSP, -1);
+        wait_for_next_event(WFNE_SUSP, -1)
         print("Auto: program entry point reached")
         del_bpt(start)
         d.addStop(get_name_ea_simple("ntdll_RtlExitUserProcess"))
@@ -1932,7 +1937,7 @@ class Auto:
         start = get_entry_ordinal(0)
         add_bpt(start)
         start_process('', '', '')
-        wait_for_next_event(WFNE_SUSP, -1);
+        wait_for_next_event(WFNE_SUSP, -1)
         print("Auto: program entry point reached")
         del_bpt(start)
         d.addStop(get_name_ea_simple("kernel32_ExitProcess")) # last breakpoint before the process terminates, to give a chance to take a memory snapshot
@@ -1954,11 +1959,11 @@ try:
 except TypeError:
     print("FunCap: please select a debugger first")
 
-
 if debugger:
     try:
         d.off()
-    except: AttributeError
+    except:
+        pass
 
     if arch == 'x86':
         d = X86CapHook()
