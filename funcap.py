@@ -1001,7 +1001,7 @@ class FunCapHook(DBG_Hooks):
             self.output(f"WARNING: saved context not found for stack pointer 0x{sp:X}, assuming function {function_call['func_name']}")
             saved_context = None
 
-        header = f"Returning from call to {func_name}(), execution resumed at {format_offset(ea)} (0x{ea:X)}"
+        header = f"Returning from call to {func_name}(), execution resumed at {format_offset(ea)} (0x{ea:X})"
         (context_full, context_comments) = self.format_return(raw_context, saved_context)
 
         if self.comments and (self.overwrite_existing or ea not in self.visited):
@@ -1020,7 +1020,7 @@ class FunCapHook(DBG_Hooks):
         caller_offset = self.format_caller(caller_ea)
         caller_name = format_name(caller_ea)
 
-        header = f"At function start: {name} (0x{ea:X)} called by {caller_offset}"
+        header = f"At function start: {name} (0x{ea:X}) called by {caller_offset}"
 
         raw_context= self.get_context(ea=ea)
         if self.colors:
