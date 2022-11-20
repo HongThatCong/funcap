@@ -44,6 +44,7 @@ So we got one fat script file atm.
 
 from __future__ import absolute_import
 from __future__ import print_function
+from os import W_OK
 
 import pickle
 
@@ -142,7 +143,18 @@ class FunCapHook(DBG_Hooks):
         @param multiple_dereferences: dereference each pointer resursively ? (default: 3 levels, 0 - off)
 
         '''
-        self.outfile = kwargs.get('outfile', os.path.expanduser('~') + "/funcap.txt")
+        self.save_dir = os.path.expandvars('$temp')
+        out_dir = os.path.dirname(idc.get_idb_path())
+        if os.path.exists(out_dir) and os.access(out_dir, os.W_OK):
+            self.save_dir = out_dir
+        else:
+            out_dir = os.path.dirname(idc.get_input_file_path())
+            if os.path.exists(out_dir) and os.access(out_dir, os.W_OK):
+                self.save_dir = out_dir
+        self.outfile = kwargs.get('outfile', os.path.join(self.save_dir, "funcap.txt"))
+        self.strings_file = kwargs.get('strings', os.path.join(self.save_dir, "funcap_strings.txt"))
+        print(f"out file at '{self.outfile}', strings file at '{self.strings_file}'")
+
         self.delete_breakpoints = kwargs.get('delete_breakpoints', True)
         self.hexdump = kwargs.get('hexdump', False)
         self.comments = kwargs.get('comments', True)
@@ -156,7 +168,6 @@ class FunCapHook(DBG_Hooks):
         self.code_discovery_nojmp = kwargs.get('code_discovery_nojmp', False)
         self.code_discovery_stop = kwargs.get('code_discovery_stop', False)
         self.no_dll = kwargs.get('no_dll', False)
-        self.strings_file = kwargs.get('strings', os.path.expanduser('~') + "/funcap_strings.txt")
         self.multiple_dereferences = kwargs.get('multiple_dereferences', 3)
 
         self.visited = [] # functions visited already
@@ -294,7 +305,7 @@ class FunCapHook(DBG_Hooks):
         @param func: name of the function to hook
 
         '''
-        self.hookFunc(jump = True, func = func)
+        self.hookFunc(jump=True, func=func)
 
     def delAll(self):
         '''
@@ -304,7 +315,7 @@ class FunCapHook(DBG_Hooks):
         for bp in range(get_bpt_qty(), 0, -1):
             del_bpt(get_bpt_ea(bp))
 
-    def graph(self, exact_offsets = False):
+    def graph(self, exact_offsets=False):
         '''
         Draw the graph
 
@@ -314,13 +325,22 @@ class FunCapHook(DBG_Hooks):
 
         CallGraph("FunCap: function calls", self.calls_graph, exact_offsets).Show()
 
-    def saveGraph(self, path=os.path.expanduser('~') + "/funcap.graph"):
+    def saveGraph(self, path=""):
+        if len(path) == 0 or not os.access(os.path.dirname(path), W_OK):
+            path = os.path.join(self.save_dir, "funcap.graph")
         with open(path, "wb") as f:
-            pickle.dump(d.calls_graph, f)
+            pickle.dump(self.calls_graph, f)
+            print(f"funcap graph file was written at '{path}'")
 
-    def loadGraph(self, path=os.path.expanduser('~') + "/funcap.graph"):
-        with open(path, "rb") as f:
-            d.calls_graph = pickle.load(f)
+    def loadGraph(self, path=""):
+        if len(path) == 0 or not os.path.exists(path):
+            path = os.path.join(self.save_dir, "funcap.graph")
+        try:
+            with open(path, "rb") as f:
+                self.calls_graph = pickle.load(f)
+                print(f"funcap graph file read from '{path}'")
+        except Exception as e:
+            print(f"read funcap graph file from '{path}' error.\n", str(e))
 
     def addStop(self, ea):
         '''
